@@ -1,0 +1,2 @@
+[console_scripts]
+gbif-mcp = gbif_mcp.server:main

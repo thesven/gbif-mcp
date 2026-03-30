@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: gbif-mcp
+Version: 0.1.0
+Summary: A Python MCP server for GBIF occurrence and range checks.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: mcp>=1.10.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.2; extra == "dev"
+Requires-Dist: ruff>=0.6.0; extra == "dev"
+
+# gbif-mcp
+
+Standalone Python MCP server for GBIF occurrence search, range checks, and unusual-species lookups.

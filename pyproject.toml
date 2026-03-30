@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gbif-mcp"
+version = "0.1.0"
+description = "A Python MCP server for GBIF occurrence and range checks."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28.0",
+  "mcp>=1.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.2",
+  "ruff>=0.6.0",
+]
+
+[project.scripts]
+gbif-mcp = "gbif_mcp.server:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

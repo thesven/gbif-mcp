@@ -34,6 +34,16 @@ def mock_client() -> GbifClient:
                     }
                 ],
             )
+        if "/media" in path:
+            return httpx.Response(
+                200,
+                json={"results": [{"identifier": "https://example.com/bear.jpg", "type": "StillImage"}]},
+            )
+        if "/children" in path:
+            return httpx.Response(
+                200,
+                json={"results": [{"key": 2, "scientificName": "Ursus horribilis", "rank": "SUBSPECIES"}]},
+            )
         if "/species/2433433" in path:
             return httpx.Response(
                 200,
@@ -69,6 +79,21 @@ def mock_client() -> GbifClient:
                     "citation": {"text": "Park Survey 2024"},
                 },
             )
+        if "/media" in path:
+            return httpx.Response(
+                200,
+                json={"results": [{"identifier": "https://example.com/bear.jpg", "type": "StillImage"}]},
+            )
+        if "/children" in path:
+            return httpx.Response(
+                200,
+                json={"results": [{"key": 2, "scientificName": "Ursus horribilis", "rank": "SUBSPECIES"}]},
+            )
+        if "/literature/search" in path:
+            return httpx.Response(
+                200,
+                json={"count": 1, "results": [{"title": "Bear Ecology", "year": 2023}]},
+            )
         return httpx.Response(404, text="Not Found")
 
     return GbifClient(transport=httpx.MockTransport(handler))
@@ -99,6 +124,9 @@ async def test_server_tools(mock_client: GbifClient) -> None:
     assert "search_occurrences" in tool_names
     assert "generate_citation" in tool_names
     assert "resolve_taxon_bridge" in tool_names
+    assert "get_species_children" in tool_names
+    assert "search_literature" in tool_names
+    assert "get_species_media" in tool_names
 
     res = await server.call_tool("match_species", {"name": "Ursus arctos"})
     assert "Ursus arctos" in res.content[0].text
@@ -142,6 +170,15 @@ async def test_server_tools(mock_client: GbifClient) -> None:
     res = await server.call_tool("resolve_taxon_bridge", {"identifier": "Ursus arctos"})
     assert "Ursus arctos" in res.content[0].text
 
+    res = await server.call_tool("get_species_children", {"taxon_key": 2433433})
+    assert "child taxa" in res.content[0].text or "Ursus" in res.content[0].text
+
+    res = await server.call_tool("search_literature", {"query": "Ursus arctos"})
+    assert "Literature" in res.content[0].text
+
+    res = await server.call_tool("get_species_media", {"taxon_key": 2433433})
+    assert "Media" in res.content[0].text
+
 
 @pytest.mark.asyncio
 async def test_server_tool_errors(failing_client: GbifClient) -> None:
@@ -177,4 +214,13 @@ async def test_server_tool_errors(failing_client: GbifClient) -> None:
     assert "failed" in res.content[0].text
 
     res = await server.call_tool("generate_citation", {"dataset_key": "bad"})
+    assert "failed" in res.content[0].text
+
+    res = await server.call_tool("get_species_children", {"taxon_key": 999999})
+    assert "failed" in res.content[0].text
+
+    res = await server.call_tool("search_literature", {"query": "bad"})
+    assert "failed" in res.content[0].text
+
+    res = await server.call_tool("get_species_media", {"taxon_key": 999999})
     assert "failed" in res.content[0].text

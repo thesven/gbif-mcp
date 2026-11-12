@@ -83,6 +83,9 @@ async def main() -> None:
                 "search_occurrences",
                 "generate_citation",
                 "resolve_taxon_bridge",
+                "get_species_children",
+                "search_literature",
+                "get_species_media",
             }
             missing = expected_tools - tool_names
             assert expected_tools.issubset(tool_names), f"Missing tools: {missing}"

@@ -357,3 +357,71 @@ def test_resolve_taxon_bridge() -> None:
     # Test direct name resolution
     res_name = client.resolve_taxon_bridge("Alces alces")
     assert res_name["resolved_source"] == "scientific_or_common_name"
+
+
+def test_get_species_children() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/children" in request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "key": 2433434,
+                        "scientificName": "Ursus arctos horribilis",
+                        "rank": "SUBSPECIES",
+                    }
+                ]
+            },
+        )
+
+    client = GbifClient(transport=httpx.MockTransport(handler))
+    children = client.get_species_children(2433433)
+    assert len(children) == 1
+    assert children[0]["scientific_name"] == "Ursus arctos horribilis"
+
+
+def test_search_literature() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/literature/search" in request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "results": [
+                    {
+                        "title": "Grizzly Bear Genomic Analysis",
+                        "year": 2023,
+                        "source": "Nature Ecology & Evolution",
+                        "authors": [{"name": "Smith J"}],
+                    }
+                ],
+            },
+        )
+
+    client = GbifClient(transport=httpx.MockTransport(handler))
+    lit = client.search_literature("Ursus arctos")
+    assert lit["total_citations"] == 1
+    assert lit["literature"][0]["title"] == "Grizzly Bear Genomic Analysis"
+
+
+def test_get_species_media() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/media" in request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "identifier": "https://example.com/bear.jpg",
+                        "type": "StillImage",
+                        "format": "image/jpeg",
+                    }
+                ]
+            },
+        )
+
+    client = GbifClient(transport=httpx.MockTransport(handler))
+    media = client.get_species_media(2433433)
+    assert len(media) == 1
+    assert media[0]["identifier"] == "https://example.com/bear.jpg"

@@ -355,6 +355,77 @@ class GbifClient:
             "ebird_species_code": ebird_code,
         }
 
+    def get_species_children(self, taxon_key: int, limit: int = 50) -> list[dict[str, Any]]:
+        """Traverse taxonomic tree downward to retrieve immediate child taxa."""
+        params = {"limit": min(limit, 100)}
+        data = self._request(f"/species/{taxon_key}/children", params)
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return [
+            {
+                "key": r.get("key"),
+                "scientific_name": r.get("scientificName"),
+                "canonical_name": r.get("canonicalName"),
+                "rank": r.get("rank"),
+                "taxonomic_status": r.get("taxonomicStatus") or r.get("status"),
+                "kingdom": r.get("kingdom"),
+                "family": r.get("family"),
+                "genus": r.get("genus"),
+                "num_descendants": r.get("numDescendants", 0),
+            }
+            for r in results
+        ]
+
+    def search_literature(self, query: str, limit: int = 15) -> dict[str, Any]:
+        """Search peer-reviewed academic literature referencing GBIF biodiversity records."""
+        params = {"q": query.strip(), "limit": min(limit, 50)}
+        data = self._request("/literature/search", params)
+        results = data.get("results", []) if isinstance(data, dict) else []
+        normalized = []
+        for doc in results:
+            authors = [
+                a.get("name")
+                for a in doc.get("authors", [])
+                if isinstance(a, dict) and a.get("name")
+            ]
+            ident = doc.get("identifiers", {})
+            doi_val = ident.get("doi") if isinstance(ident, dict) else doc.get("doi")
+            normalized.append(
+                {
+                    "title": doc.get("title"),
+                    "authors": authors[:5],
+                    "year": doc.get("year"),
+                    "journal": doc.get("source"),
+                    "doi": doi_val,
+                    "abstract": doc.get("abstract"),
+                }
+            )
+        count_val = (
+            data.get("count", len(normalized)) if isinstance(data, dict) else len(normalized)
+        )
+        return {
+            "query": query,
+            "total_citations": count_val,
+            "literature": normalized,
+        }
+
+    def get_species_media(self, taxon_key: int, limit: int = 15) -> list[dict[str, Any]]:
+        """Retrieve images and specimen photographs deposited for a taxon in GBIF."""
+        params = {"limit": min(limit, 50)}
+        data = self._request(f"/species/{taxon_key}/media", params)
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return [
+            {
+                "identifier": m.get("identifier"),
+                "type": m.get("type"),
+                "format": m.get("format"),
+                "title": m.get("title"),
+                "creator": m.get("creator"),
+                "license": m.get("license"),
+            }
+            for m in results
+            if m.get("identifier")
+        ]
+
     def _request(self, path: str, params: dict[str, Any]) -> Any:
         url = f"{self.base_url}{path}"
         with httpx.Client(timeout=self.timeout, transport=self.transport) as client:

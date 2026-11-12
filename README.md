@@ -29,6 +29,9 @@ Built to work seamlessly with AI assistants (Claude Desktop, Cursor, Antigravity
 | `resolve_taxon_bridge` | Bridge cross-platform IDs between iNaturalist, eBird, and GBIF taxonomic backbone. |
 | `search_occurrences` | Search GBIF occurrences with Darwin Core filtering and token-optimized slim projections. |
 | `generate_citation` | Generate academic research citation, DOI link, and attribution statement for a dataset. |
+| `get_species_children` | Traverse taxonomic tree downward to retrieve immediate child taxa (subtaxa/genera/species). |
+| `search_literature` | Search peer-reviewed academic literature referencing GBIF biodiversity records. |
+| `get_species_media` | Retrieve images and specimen photographs deposited for a taxon in GBIF. |
 | `match_species` | Match a scientific or common species name against the GBIF backbone taxonomy. |
 | `search_species` | Search and auto-complete taxa by query string. |
 | `get_species_details` | Retrieve full taxonomic classification and lineage for a taxon key. |

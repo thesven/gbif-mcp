@@ -278,6 +278,69 @@ def create_server(client: GbifClient | None = None) -> MCPServer:
         except Exception as exc:
             return {"error": str(exc), "summary": f"Taxon bridge resolution failed: {exc}"}
 
+    @server.tool()
+    def get_species_children(taxon_key: int, limit: int = 50) -> dict[str, Any]:
+        """Traverse taxonomic tree downward to retrieve immediate child taxa."""
+        try:
+            children = api.get_species_children(taxon_key=taxon_key, limit=limit)
+            lines = [
+                f"- [{c.get('rank')}] {c.get('scientific_name')} (Key: {c.get('key')})"
+                for c in children[:10]
+            ]
+            summary = (
+                f"Found {len(children)} child taxa for key {taxon_key}:\n" + "\n".join(lines)
+                if children
+                else f"No child taxa found for key {taxon_key}."
+            )
+            return {"children": children, "count": len(children), "summary": summary}
+        except GbifError as exc:
+            return {
+                "error": str(exc),
+                "children": [],
+                "count": 0,
+                "summary": f"Lookup failed: {exc}",
+            }
+
+    @server.tool()
+    def search_literature(query: str, limit: int = 15) -> dict[str, Any]:
+        """Search peer-reviewed academic literature referencing GBIF biodiversity records."""
+        try:
+            lit = api.search_literature(query=query, limit=limit)
+            docs = lit.get("literature", [])
+            lines = [
+                f"- {d.get('title')} ({d.get('year')}) in {d.get('journal') or 'N/A'}"
+                for d in docs[:5]
+            ]
+            summary = (
+                f"Literature for '{query}' ({lit.get('total_citations')} citations):\n"
+                + "\n".join(lines)
+                if docs
+                else f"No literature citations found for '{query}'."
+            )
+            return {"results": lit, "summary": summary}
+        except GbifError as exc:
+            return {"error": str(exc), "results": {}, "summary": f"Literature search failed: {exc}"}
+
+    @server.tool()
+    def get_species_media(taxon_key: int, limit: int = 15) -> dict[str, Any]:
+        """Retrieve images and specimen photographs deposited for a taxon in GBIF."""
+        try:
+            media = api.get_species_media(taxon_key=taxon_key, limit=limit)
+            lines = [f"- [{m.get('type')}] {m.get('identifier')}" for m in media[:5]]
+            summary = (
+                f"Media for taxon {taxon_key} ({len(media)} items):\n" + "\n".join(lines)
+                if media
+                else f"No media found for taxon {taxon_key}."
+            )
+            return {"media": media, "count": len(media), "summary": summary}
+        except GbifError as exc:
+            return {
+                "error": str(exc),
+                "media": [],
+                "count": 0,
+                "summary": f"Media lookup failed: {exc}",
+            }
+
     return server
 
 

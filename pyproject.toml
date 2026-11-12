@@ -1,37 +1,87 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
 [project]
 name = "gbif-mcp"
-version = "0.1.0"
-description = "A Python MCP server for GBIF occurrence and range checks."
+version = "0.2.0"
+description = "Model Context Protocol (MCP) server for GBIF biodiversity occurrences, taxonomic backbone resolution, and species distribution history"
 readme = "README.md"
+license = "MIT"
+authors = [
+  { name = "Michael Svendsen", email = "mike@reactiv.ai" }
+]
+keywords = ["mcp", "model-context-protocol", "gbif", "biodiversity", "taxonomy", "occurrences", "ecology", "darwin-core"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 requires-python = ">=3.11"
 dependencies = [
-  "httpx>=0.28.0",
-  "mcp>=1.10.0",
+  "httpx>=0.28.0,<1",
+  "mcp>=2.2.0,<3",
+  "pydantic>=2.0.0,<3",
+  "python-dotenv>=1.0.0,<2",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pytest>=7.2",
-  "ruff>=0.6.0",
-]
+[project.urls]
+Homepage = "https://github.com/thesven/gbif-mcp"
+Repository = "https://github.com/thesven/gbif-mcp"
+Issues = "https://github.com/thesven/gbif-mcp/issues"
 
 [project.scripts]
 gbif-mcp = "gbif_mcp.server:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0,<10",
+  "pytest-asyncio>=1.0.0,<2",
+  "pytest-cov>=6.0.0,<8",
+  "ruff>=0.8.0,<1",
+]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/gbif_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/scripts",
+  "/.github",
+  "/pyproject.toml",
+  "/uv.lock",
+  "/*.md",
+  "/LICENSE",
+]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-pythonpath = ["src"]
 
 [tool.ruff]
-line-length = 100
 target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ASYNC240", "ASYNC230"]
+
+[tool.coverage.run]
+branch = true
+source = ["gbif_mcp"]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+fail_under = 90

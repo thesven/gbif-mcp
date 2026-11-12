@@ -1,79 +1,260 @@
 from __future__ import annotations
 
-from mcp.server import FastMCP
+import argparse
+import sys
+from typing import Any
 
-from .client import GbifClient
+from mcp.server import MCPServer
+
+from . import __version__
+from .client import GbifClient, GbifError
+
+DEFAULT_INSTRUCTIONS = """
+GBIF MCP Server: Access global biodiversity occurrence records, authoritative taxonomic
+backbone matching, and long-term historical species distribution data.
+
+Key Best Practices:
+1. When checking a species by common or ambiguous name, call `match_species` or `search_species`
+   first to obtain its accepted scientific name, taxonomic rank, and GBIF `taxon_key`.
+2. To explore occurrence records around a location, call `species_occurrences_nearby` with
+   `lat`, `lon`, and `radius_km`. You can optionally filter by `species_name` or `basis_of_record`
+   (e.g., HUMAN_OBSERVATION, PRESERVED_SPECIMEN).
+3. Use `species_range_check` to systematically evaluate whether a species is expected,
+   uncommon, historic-only, or undocumented in a local area.
+4. Use `unusual_species_nearby` to discover rarely-recorded species in a region.
+5. Retrieve provenance and citation information for research datasets via `get_dataset_metadata`.
+""".strip()
 
 
-mcp = FastMCP("gbif-mcp")
-client = GbifClient()
+def _format_records_summary(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return "No records found."
+    lines = []
+    for r in records[:10]:
+        species = r.get("species") or "Unknown species"
+        date = r.get("event_date") or "Date unknown"
+        locality = r.get("locality")
+        basis = r.get("basis_of_record") or "RECORD"
+        loc_str = f" in {locality}" if locality else ""
+        lines.append(f"- [{basis}] {species} on {date}{loc_str}")
+    return "\n".join(lines)
 
 
-@mcp.tool()
-def species_occurrences_nearby(
-    lat: float,
-    lon: float,
-    radius_km: int = 50,
-    limit: int = 25,
-    species_name: str | None = None,
-) -> dict:
-    """Fetch GBIF occurrences near a point."""
-    result = client.species_occurrences_nearby(lat, lon, radius_km, limit, species_name)
-    result["summary"] = "\n".join(
-        f"{item.get('species', 'Unknown species')} at {item.get('locality', 'n/a')} on {item.get('event_date', 'n/a')}"
-        for item in result["records"][:10]
+def create_server(client: GbifClient | None = None) -> MCPServer:
+    """Create and configure the GBIF MCPServer instance."""
+    api = client or GbifClient()
+
+    server = MCPServer(
+        "gbif",
+        version=__version__,
+        instructions=DEFAULT_INSTRUCTIONS,
     )
-    return result
+
+    @server.tool()
+    def match_species(
+        name: str,
+        kingdom: str | None = None,
+        strict: bool = False,
+    ) -> dict[str, Any]:
+        """Match a scientific or vernacular species name against the GBIF taxonomic backbone."""
+        try:
+            result = api.match_species(name=name, kingdom=kingdom, strict=strict)
+            match_type = result.get("matchType", "NONE")
+            scientific = result.get("scientificName", "No match")
+            status = result.get("status", "UNKNOWN")
+            confidence = result.get("confidence", 0)
+            summary = (
+                f"Match: {scientific} (type={match_type}, "
+                f"status={status}, confidence={confidence}%)"
+            )
+            return {"match": result, "summary": summary}
+        except GbifError as exc:
+            return {"error": str(exc), "summary": f"Species match failed: {exc}"}
+
+    @server.tool()
+    def search_species(query: str, limit: int = 15) -> dict[str, Any]:
+        """Search GBIF species backbone for auto-suggest and taxonomy autocompletion."""
+        try:
+            results = api.search_species(query=query, limit=limit)
+            lines = [
+                f"- {item.get('scientific_name')} ({item.get('rank')}, {item.get('kingdom')}) "
+                f"[key: {item.get('key')}]"
+                for item in results[:10]
+            ]
+            summary = "\n".join(lines) if lines else "No matching taxa found."
+            return {"results": results, "count": len(results), "summary": summary}
+        except GbifError as exc:
+            return {"error": str(exc), "summary": f"Species search failed: {exc}"}
+
+    @server.tool()
+    def get_species_details(taxon_key: int) -> dict[str, Any]:
+        """Retrieve complete taxonomic classification and lineage for a GBIF taxon key."""
+        try:
+            details = api.get_species_details(taxon_key=taxon_key)
+            name = details.get("scientificName") or details.get("canonicalName", "Taxon")
+            rank = details.get("rank", "Unknown rank")
+            summary = f"{name} ({rank}) - Status: {details.get('taxonomicStatus', 'N/A')}"
+            return {"details": details, "summary": summary}
+        except GbifError as exc:
+            return {"error": str(exc), "summary": f"Failed to get species details: {exc}"}
+
+    @server.tool()
+    def species_occurrences_nearby(
+        lat: float,
+        lon: float,
+        radius_km: int = 50,
+        limit: int = 25,
+        species_name: str | None = None,
+        taxon_key: int | None = None,
+        basis_of_record: str | None = None,
+        years_back: int | None = None,
+    ) -> dict[str, Any]:
+        """Fetch GBIF occurrence records within a geographic radius in kilometers."""
+        try:
+            result = api.species_occurrences_nearby(
+                lat=lat,
+                lon=lon,
+                radius_km=radius_km,
+                limit=limit,
+                species_name=species_name,
+                taxon_key=taxon_key,
+                basis_of_record=basis_of_record,
+                years_back=years_back,
+            )
+            result["summary"] = _format_records_summary(result["records"])
+            return result
+        except GbifError as exc:
+            return {"error": str(exc), "records": [], "count": 0, "summary": f"Query failed: {exc}"}
+
+    @server.tool()
+    def species_occurrence_history(
+        lat: float,
+        lon: float,
+        radius_km: int = 50,
+        species_name: str | None = None,
+        years_back: int = 25,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Fetch historical GBIF occurrence records spanning several decades."""
+        try:
+            result = api.species_occurrence_history(
+                lat=lat,
+                lon=lon,
+                radius_km=radius_km,
+                species_name=species_name,
+                years_back=years_back,
+                limit=limit,
+            )
+            result["summary"] = _format_records_summary(result["records"])
+            return result
+        except GbifError as exc:
+            return {"error": str(exc), "records": [], "count": 0, "summary": f"Query failed: {exc}"}
+
+    @server.tool()
+    def species_range_check(
+        species_name: str,
+        lat: float,
+        lon: float,
+        radius_km: int = 50,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Assess whether a species is expected, historic-only, or undocumented near coordinates."""
+        try:
+            result = api.species_range_check(
+                species_name=species_name,
+                lat=lat,
+                lon=lon,
+                radius_km=radius_km,
+                limit=limit,
+            )
+            assessment = result["assessment"]
+            status_upper = assessment["status"].upper()
+            interp = assessment["interpretation"]
+            recent_cnt = assessment["recent_nearby_records"]
+            hist_cnt = assessment["historical_records"]
+            result["summary"] = (
+                f"{assessment['species']}: {status_upper} — {interp} "
+                f"({recent_cnt} recent, {hist_cnt} historical records)"
+            )
+            return result
+        except GbifError as exc:
+            return {"error": str(exc), "summary": f"Range check failed: {exc}"}
+
+    @server.tool()
+    def unusual_species_nearby(
+        lat: float,
+        lon: float,
+        radius_km: int = 50,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        """Identify species with low occurrence frequencies near a point."""
+        try:
+            result = api.unusual_species_nearby(lat=lat, lon=lon, radius_km=radius_km, limit=limit)
+            lines = []
+            for item in result["records"][:10]:
+                loc = item.get("locality") or "unknown"
+                lines.append(
+                    f"- {item['species']}: {item['occurrence_count']} records (last at {loc})"
+                )
+            result["summary"] = "\n".join(lines) if lines else "No species records found."
+            return result
+        except GbifError as exc:
+            return {"error": str(exc), "records": [], "summary": f"Query failed: {exc}"}
+
+    @server.tool()
+    def get_dataset_metadata(dataset_key: str) -> dict[str, Any]:
+        """Fetch title, publisher, license, and citation information for a GBIF dataset."""
+        try:
+            meta = api.get_dataset_metadata(dataset_key=dataset_key)
+            title = meta.get("title", "Untitled dataset")
+            citation = meta.get("citation") or meta.get("doi") or "No citation recorded"
+            summary = f"Dataset: {title} | Citation: {citation}"
+            return {"dataset": meta, "summary": summary}
+        except GbifError as exc:
+            return {"error": str(exc), "summary": f"Failed to get dataset metadata: {exc}"}
+
+    return server
 
 
-@mcp.tool()
-def species_occurrence_history(
-    lat: float,
-    lon: float,
-    radius_km: int = 50,
-    species_name: str | None = None,
-    years_back: int = 25,
-    limit: int = 50,
-) -> dict:
-    """Fetch historical GBIF occurrences near a point."""
-    result = client.species_occurrence_history(lat, lon, radius_km, species_name, years_back, limit)
-    result["summary"] = "\n".join(
-        f"{item.get('species', 'Unknown species')} on {item.get('event_date', 'n/a')}" for item in result["records"][:10]
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="gbif-mcp",
+        description="Model Context Protocol (MCP) server for GBIF occurrences and taxonomy",
     )
-    return result
-
-
-@mcp.tool()
-def species_range_check(
-    species_name: str,
-    lat: float,
-    lon: float,
-    radius_km: int = 50,
-    limit: int = 25,
-) -> dict:
-    """Assess whether a species looks expected or unusual near a point."""
-    result = client.species_range_check(species_name, lat, lon, radius_km, limit)
-    assessment = result["assessment"]
-    result["summary"] = (
-        f"{assessment['species']}: {assessment['status']} with "
-        f"{assessment['recent_nearby_records']} recent and {assessment['historical_records']} historical records"
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
-    return result
-
-
-@mcp.tool()
-def unusual_species_nearby(lat: float, lon: float, radius_km: int = 50, limit: int = 25) -> dict:
-    """Rank nearby species with sparse GBIF occurrence counts."""
-    result = client.unusual_species_nearby(lat, lon, radius_km, limit)
-    result["summary"] = "\n".join(
-        f"{item['species']}: {item['occurrence_count']} nearby GBIF records" for item in result["records"]
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Transport protocol to use (default: stdio)",
     )
-    return result
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind for SSE transport (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind for SSE transport (default: 8000)",
+    )
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    mcp.run()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    server = create_server()
+    if args.transport == "stdio":
+        server.run(transport="stdio")
+    else:
+        server.run(transport="sse", host=args.host, port=args.port)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

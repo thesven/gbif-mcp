@@ -212,6 +212,149 @@ class GbifClient:
             "homepage": data.get("homepage"),
         }
 
+    def search_occurrences(
+        self,
+        taxon_key: int | None = None,
+        species_name: str | None = None,
+        country: str | None = None,
+        year: int | None = None,
+        basis_of_record: str | None = None,
+        has_coordinate: bool = True,
+        limit: int = 20,
+        slim: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Search GBIF occurrence records with Darwin Core filtering and slim LLM projection."""
+        params: dict[str, Any] = {
+            "limit": min(limit, 100),
+            "hasCoordinate": "true" if has_coordinate else "false",
+        }
+        if taxon_key is not None:
+            params["taxonKey"] = taxon_key
+        elif species_name:
+            matched = self.match_species(species_name)
+            if matched.get("usageKey"):
+                params["taxonKey"] = matched["usageKey"]
+            else:
+                params["scientificName"] = species_name
+
+        if country:
+            params["country"] = country.upper()
+        if year:
+            params["year"] = year
+        if basis_of_record:
+            params["basisOfRecord"] = basis_of_record.upper()
+
+        data = self._request("/occurrence/search", params)
+        records = data.get("results", []) if isinstance(data, dict) else []
+        if slim:
+            return self._normalize_records(records)
+        return records
+
+    def generate_citation(self, dataset_key: str) -> dict[str, Any]:
+        """Generate academic research citation, DOI, and attribution for a GBIF dataset."""
+        meta = self.get_dataset_metadata(dataset_key)
+        title = meta.get("title") or "GBIF Occurrence Dataset"
+        doi = meta.get("doi")
+        doi_url = f"https://doi.org/{doi}" if doi and not doi.startswith("http") else (doi or "N/A")
+        citation_text = meta.get("citation") or f"{title}. GBIF.org. Available from: {doi_url}"
+        license_str = meta.get("license") or "CC BY 4.0"
+        return {
+            "dataset_key": dataset_key,
+            "title": title,
+            "doi": doi,
+            "doi_url": doi_url,
+            "citation": citation_text,
+            "license": license_str,
+            "attribution_statement": f"Data via GBIF.org: {citation_text} [License: {license_str}]",
+        }
+
+    def resolve_taxon_bridge(
+        self,
+        identifier: str,
+        source: str = "auto",
+    ) -> dict[str, Any]:
+        """Bridge cross-platform IDs between iNaturalist, eBird, and the GBIF backbone."""
+        clean_id = identifier.strip()
+        sci_name: str | None = None
+        common_name: str | None = None
+        resolved_source = source
+        inat_id: int | None = None
+        ebird_code: str | None = None
+
+        with httpx.Client(timeout=self.timeout, transport=self.transport) as http:
+            # 1. Resolve from iNaturalist
+            if source == "inaturalist" or (
+                source == "auto" and clean_id.isdigit() and len(clean_id) <= 7
+            ):
+                try:
+                    resp = http.get(f"https://api.inaturalist.org/v1/taxa/{clean_id}")
+                    if resp.status_code == 200:
+                        results = resp.json().get("results", [])
+                        if results:
+                            r = results[0]
+                            sci_name = r.get("name")
+                            common_name = r.get("preferred_common_name")
+                            inat_id = r.get("id")
+                            resolved_source = "inaturalist"
+                except Exception:
+                    pass
+
+            # 2. Resolve from eBird
+            if not sci_name and (
+                source == "ebird"
+                or (
+                    source == "auto"
+                    and clean_id.isalnum()
+                    and len(clean_id) <= 8
+                    and any(c.isdigit() for c in clean_id)
+                )
+            ):
+                try:
+                    resp = http.get(
+                        "https://api.ebird.org/v2/ref/taxonomy/ebird",
+                        params={"fmt": "json", "species": clean_id},
+                    )
+                    if resp.status_code == 200:
+                        entries = resp.json()
+                        if isinstance(entries, list) and entries:
+                            e = entries[0]
+                            sci_name = e.get("sciName")
+                            common_name = e.get("comName")
+                            ebird_code = e.get("speciesCode")
+                            resolved_source = "ebird"
+                except Exception:
+                    pass
+
+        # 3. Fallback to direct name query
+        if not sci_name:
+            sci_name = clean_id
+            if resolved_source == "auto":
+                resolved_source = "scientific_or_common_name"
+
+        matched = self.match_species(sci_name)
+        gbif_key = matched.get("usageKey") or matched.get("speciesKey")
+
+        return {
+            "query_identifier": clean_id,
+            "resolved_source": resolved_source,
+            "scientific_name": matched.get("scientificName") or sci_name,
+            "canonical_name": matched.get("canonicalName") or sci_name,
+            "common_name": common_name,
+            "gbif_taxon_key": gbif_key,
+            "rank": matched.get("rank"),
+            "status": matched.get("status"),
+            "match_type": matched.get("matchType", "NONE"),
+            "confidence": matched.get("confidence", 0),
+            "kingdom": matched.get("kingdom"),
+            "phylum": matched.get("phylum"),
+            "class": matched.get("class"),
+            "order": matched.get("order"),
+            "family": matched.get("family"),
+            "genus": matched.get("genus"),
+            "inaturalist_taxon_id": inat_id,
+            "ebird_species_code": ebird_code,
+        }
+
     def _request(self, path: str, params: dict[str, Any]) -> Any:
         url = f"{self.base_url}{path}"
         with httpx.Client(timeout=self.timeout, transport=self.transport) as client:

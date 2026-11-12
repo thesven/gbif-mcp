@@ -247,3 +247,113 @@ def test_error_handling() -> None:
     client2 = GbifClient(transport=httpx.MockTransport(handler_bad_json))
     with pytest.raises(GbifError, match="Invalid JSON"):
         client2.get_species_details(1234)
+
+
+def test_search_occurrences() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/species/match":
+            return httpx.Response(200, json={"usageKey": 2435, "scientificName": "Alces alces"})
+        assert request.url.path == "/v1/occurrence/search"
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "key": 9991,
+                        "species": "Alces alces",
+                        "decimalLatitude": 45.1,
+                        "decimalLongitude": -75.2,
+                        "eventDate": "2024-05-10",
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = GbifClient(transport=transport)
+    results = client.search_occurrences(species_name="Alces alces", country="CA", year=2024)
+    assert len(results) == 1
+    assert results[0]["key"] == 9991
+
+    raw_results = client.search_occurrences(taxon_key=2435, slim=False)
+    assert len(raw_results) == 1
+    assert raw_results[0]["key"] == 9991
+
+
+def test_generate_citation() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "key": "dataset-123",
+                "title": "Avian Survey 2024",
+                "doi": "10.15468/testdoi",
+                "citation": {"text": "Audubon Society (2024)"},
+                "license": "CC-BY-4.0",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = GbifClient(transport=transport)
+    cit = client.generate_citation("dataset-123")
+    assert cit["dataset_key"] == "dataset-123"
+    assert "Audubon Society" in cit["citation"]
+    assert cit["doi_url"] == "https://doi.org/10.15468/testdoi"
+
+
+def test_resolve_taxon_bridge() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "inaturalist.org" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"id": 47157, "name": "Lepidoptera", "preferred_common_name": "Butterflies"}
+                    ]
+                },
+            )
+        if "ebird.org" in url:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "sciName": "Anas platyrhynchos",
+                        "comName": "Mallard",
+                        "speciesCode": "mallar3",
+                    }
+                ],
+            )
+        if "/species/match" in url:
+            name = request.url.params.get("name", "")
+            return httpx.Response(
+                200,
+                json={
+                    "usageKey": 797 if "Lepidoptera" in name else 2498263,
+                    "scientificName": name,
+                    "canonicalName": name,
+                    "rank": "ORDER" if "Lepidoptera" in name else "SPECIES",
+                    "status": "ACCEPTED",
+                    "matchType": "EXACT",
+                    "kingdom": "Animalia",
+                },
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = GbifClient(transport=transport)
+
+    # Test iNaturalist resolution
+    res_inat = client.resolve_taxon_bridge("47157", source="inaturalist")
+    assert res_inat["resolved_source"] == "inaturalist"
+    assert res_inat["gbif_taxon_key"] == 797
+    assert res_inat["inaturalist_taxon_id"] == 47157
+
+    # Test eBird resolution
+    res_ebird = client.resolve_taxon_bridge("mallar3", source="ebird")
+    assert res_ebird["resolved_source"] == "ebird"
+    assert res_ebird["ebird_species_code"] == "mallar3"
+
+    # Test direct name resolution
+    res_name = client.resolve_taxon_bridge("Alces alces")
+    assert res_name["resolved_source"] == "scientific_or_common_name"

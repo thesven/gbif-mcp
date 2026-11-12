@@ -11,18 +11,20 @@ from .client import GbifClient, GbifError
 
 DEFAULT_INSTRUCTIONS = """
 GBIF MCP Server: Access global biodiversity occurrence records, authoritative taxonomic
-backbone matching, and long-term historical species distribution data.
+backbone matching, cross-platform taxon ID resolution, and historical species distribution data.
 
 Key Best Practices:
 1. When checking a species by common or ambiguous name, call `match_species` or `search_species`
    first to obtain its accepted scientific name, taxonomic rank, and GBIF `taxon_key`.
-2. To explore occurrence records around a location, call `species_occurrences_nearby` with
-   `lat`, `lon`, and `radius_km`. You can optionally filter by `species_name` or `basis_of_record`
-   (e.g., HUMAN_OBSERVATION, PRESERVED_SPECIMEN).
-3. Use `species_range_check` to systematically evaluate whether a species is expected,
+2. To bridge IDs across citizen science and ecological tools, call `resolve_taxon_bridge` with
+   an iNaturalist taxon ID, an eBird species code, or a scientific name for a unified profile.
+3. Call `search_occurrences` for flexible Darwin Core occurrence filtering (by country, year,
+   basis of record) with token-optimized slim projections.
+4. To explore occurrence records around a location, call `species_occurrences_nearby` with
+   `lat`, `lon`, and `radius_km`.
+5. Use `species_range_check` to systematically evaluate whether a species is expected,
    uncommon, historic-only, or undocumented in a local area.
-4. Use `unusual_species_nearby` to discover rarely-recorded species in a region.
-5. Retrieve provenance and citation information for research datasets via `get_dataset_metadata`.
+6. Use `generate_citation` to generate formal academic citations and attribution statements.
 """.strip()
 
 
@@ -212,6 +214,69 @@ def create_server(client: GbifClient | None = None) -> MCPServer:
             return {"dataset": meta, "summary": summary}
         except GbifError as exc:
             return {"error": str(exc), "summary": f"Failed to get dataset metadata: {exc}"}
+
+    @server.tool()
+    def search_occurrences(
+        taxon_key: int | None = None,
+        species_name: str | None = None,
+        country: str | None = None,
+        year: int | None = None,
+        basis_of_record: str | None = None,
+        has_coordinate: bool = True,
+        limit: int = 20,
+        slim: bool = True,
+    ) -> dict[str, Any]:
+        """Search GBIF occurrences with Darwin Core filtering and token-optimized projections."""
+        try:
+            records = api.search_occurrences(
+                taxon_key=taxon_key,
+                species_name=species_name,
+                country=country,
+                year=year,
+                basis_of_record=basis_of_record,
+                has_coordinate=has_coordinate,
+                limit=limit,
+                slim=slim,
+            )
+            summary = _format_records_summary(records)
+            return {"records": records, "count": len(records), "summary": summary}
+        except GbifError as exc:
+            return {
+                "error": str(exc),
+                "records": [],
+                "count": 0,
+                "summary": f"Search failed: {exc}",
+            }
+
+    @server.tool()
+    def generate_citation(dataset_key: str) -> dict[str, Any]:
+        """Generate academic research citation, DOI link, and attribution statement."""
+        try:
+            citation_info = api.generate_citation(dataset_key=dataset_key)
+            return {
+                "citation": citation_info,
+                "summary": citation_info["attribution_statement"],
+            }
+        except GbifError as exc:
+            return {"error": str(exc), "summary": f"Failed to generate citation: {exc}"}
+
+    @server.tool()
+    def resolve_taxon_bridge(
+        identifier: str,
+        source: str = "auto",
+    ) -> dict[str, Any]:
+        """Bridge cross-platform IDs between iNaturalist, eBird, and the GBIF taxonomic backbone."""
+        try:
+            profile = api.resolve_taxon_bridge(identifier=identifier, source=source)
+            name = profile.get("scientific_name") or identifier
+            key = profile.get("gbif_taxon_key") or "unmapped"
+            src = profile.get("resolved_source")
+            summary = (
+                f"Taxon Bridge ({src}): {name} -> GBIF Key {key} (Rank: {profile.get('rank')})"
+            )
+            return {"profile": profile, "summary": summary}
+        except Exception as exc:
+            return {"error": str(exc), "summary": f"Taxon bridge resolution failed: {exc}"}
 
     return server
 

@@ -96,6 +96,9 @@ async def test_server_tools(mock_client: GbifClient) -> None:
     assert "species_range_check" in tool_names
     assert "unusual_species_nearby" in tool_names
     assert "get_dataset_metadata" in tool_names
+    assert "search_occurrences" in tool_names
+    assert "generate_citation" in tool_names
+    assert "resolve_taxon_bridge" in tool_names
 
     res = await server.call_tool("match_species", {"name": "Ursus arctos"})
     assert "Ursus arctos" in res.content[0].text
@@ -130,6 +133,15 @@ async def test_server_tools(mock_client: GbifClient) -> None:
     res = await server.call_tool("get_dataset_metadata", {"dataset_key": "d1"})
     assert "Park Survey" in res.content[0].text
 
+    res = await server.call_tool("search_occurrences", {"species_name": "Ursus arctos"})
+    assert "records" in res.content[0].text
+
+    res = await server.call_tool("generate_citation", {"dataset_key": "d1"})
+    assert "Park Survey" in res.content[0].text
+
+    res = await server.call_tool("resolve_taxon_bridge", {"identifier": "Ursus arctos"})
+    assert "Ursus arctos" in res.content[0].text
+
 
 @pytest.mark.asyncio
 async def test_server_tool_errors(failing_client: GbifClient) -> None:
@@ -159,4 +171,10 @@ async def test_server_tool_errors(failing_client: GbifClient) -> None:
     assert "failed" in res.content[0].text
 
     res = await server.call_tool("get_dataset_metadata", {"dataset_key": "bad"})
+    assert "failed" in res.content[0].text
+
+    res = await server.call_tool("search_occurrences", {"species_name": "Ursus"})
+    assert "failed" in res.content[0].text
+
+    res = await server.call_tool("generate_citation", {"dataset_key": "bad"})
     assert "failed" in res.content[0].text

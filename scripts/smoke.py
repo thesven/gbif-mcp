@@ -80,6 +80,9 @@ async def main() -> None:
                 "species_range_check",
                 "unusual_species_nearby",
                 "get_dataset_metadata",
+                "search_occurrences",
+                "generate_citation",
+                "resolve_taxon_bridge",
             }
             missing = expected_tools - tool_names
             assert expected_tools.issubset(tool_names), f"Missing tools: {missing}"

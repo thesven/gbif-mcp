@@ -12,9 +12,11 @@ Built to work seamlessly with AI assistants (Claude Desktop, Cursor, Antigravity
 
 ## Key Features
 
+- **Cross-Platform Taxon Bridge**: Seamlessly bridges iNaturalist Taxon IDs, eBird Species Codes, and GBIF Backbone Keys into a single unified taxonomic identity.
 - **Agent-Optimized Token Footprint**: Unlike standard Darwin Core exports that dump 150+ raw fields, `gbif-mcp` projects occurrences into concise, semantically clean records (coordinates, uncertainty, dates, basis of record, locality, and media).
 - **Authoritative Taxonomic Backbone**: Fuzzily or strictly resolve species and vernacular names into canonical classifications, ranks, and accepted keys.
 - **Geospatial Range & History Analysis**: Differentiate between expected, uncommon, historic-only, and undocumented occurrences within a user-defined radius.
+- **Academic Attribution & Citation Generator**: Automatically generate official DOI research citations and attribution statements for GBIF datasets.
 - **Specimen & Observation Filtering**: Filter by Darwin Core `basisOfRecord` (`HUMAN_OBSERVATION`, `PRESERVED_SPECIMEN`, `MACHINE_OBSERVATION`, `FOSSIL_SPECIMEN`).
 - **Zero-Credential Read Access**: Connects to GBIF's open REST API v1 without mandatory API keys.
 
@@ -24,6 +26,9 @@ Built to work seamlessly with AI assistants (Claude Desktop, Cursor, Antigravity
 
 | Tool | Description |
 | :--- | :--- |
+| `resolve_taxon_bridge` | Bridge cross-platform IDs between iNaturalist, eBird, and GBIF taxonomic backbone. |
+| `search_occurrences` | Search GBIF occurrences with Darwin Core filtering and token-optimized slim projections. |
+| `generate_citation` | Generate academic research citation, DOI link, and attribution statement for a dataset. |
 | `match_species` | Match a scientific or common species name against the GBIF backbone taxonomy. |
 | `search_species` | Search and auto-complete taxa by query string. |
 | `get_species_details` | Retrieve full taxonomic classification and lineage for a taxon key. |

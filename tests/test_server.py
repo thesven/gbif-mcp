@@ -37,12 +37,20 @@ def mock_client() -> GbifClient:
         if "/media" in path:
             return httpx.Response(
                 200,
-                json={"results": [{"identifier": "https://example.com/bear.jpg", "type": "StillImage"}]},
+                json={
+                    "results": [
+                        {"identifier": "https://example.com/bear.jpg", "type": "StillImage"}
+                    ]
+                },
             )
         if "/children" in path:
             return httpx.Response(
                 200,
-                json={"results": [{"key": 2, "scientificName": "Ursus horribilis", "rank": "SUBSPECIES"}]},
+                json={
+                    "results": [
+                        {"key": 2, "scientificName": "Ursus horribilis", "rank": "SUBSPECIES"}
+                    ]
+                },
             )
         if "/species/2433433" in path:
             return httpx.Response(
@@ -82,12 +90,20 @@ def mock_client() -> GbifClient:
         if "/media" in path:
             return httpx.Response(
                 200,
-                json={"results": [{"identifier": "https://example.com/bear.jpg", "type": "StillImage"}]},
+                json={
+                    "results": [
+                        {"identifier": "https://example.com/bear.jpg", "type": "StillImage"}
+                    ]
+                },
             )
         if "/children" in path:
             return httpx.Response(
                 200,
-                json={"results": [{"key": 2, "scientificName": "Ursus horribilis", "rank": "SUBSPECIES"}]},
+                json={
+                    "results": [
+                        {"key": 2, "scientificName": "Ursus horribilis", "rank": "SUBSPECIES"}
+                    ]
+                },
             )
         if "/literature/search" in path:
             return httpx.Response(
